@@ -1,7 +1,7 @@
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql.functions import func
 from sqlalchemy.sql.schema import Column, ForeignKey
-from sqlalchemy.sql.sqltypes import BigInteger, DateTime, Integer, String
+from sqlalchemy.sql.sqltypes import BigInteger, DateTime, Integer, String, ARRAY
 
 from api.database import Base
 

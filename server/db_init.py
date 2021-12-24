@@ -5,7 +5,7 @@ from sqlalchemy.sql.schema import Table
 
 from api.dependencies.db import get_db
 from api.database import Base, engine
-from api.models import User, Prospect, Campaign, CampaignProspect
+from api.models import User, Prospect, Campaign, CampaignProspect, ProspectsFiles, ProspectsFilesProgress
 
 
 if __name__ == "__main__":
@@ -17,6 +17,8 @@ if __name__ == "__main__":
             CampaignProspect.__table__,
             Campaign.__table__,
             Prospect.__table__,
+            ProspectsFiles.__table__,
+            ProspectsFilesProgress.__table__,
             User.__table__,
         ]
         print("\n-- Dropping All Tables --")
