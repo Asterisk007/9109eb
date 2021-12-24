@@ -5,7 +5,14 @@ from sqlalchemy.sql.schema import Table
 
 from api.dependencies.db import get_db
 from api.database import Base, engine
-from api.models import User, Prospect, Campaign, CampaignProspect, ProspectsFiles, ProspectsFilesProgress
+from api.models import (
+    User,
+    Prospect,
+    Campaign,
+    CampaignProspect,
+    ProspectsFiles,
+    ProspectsFilesProgress,
+)
 
 
 if __name__ == "__main__":
