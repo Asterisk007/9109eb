@@ -16,15 +16,6 @@ class ProspectsFilesResponse(BaseModel):
     preview: List[List[str]]
 
 
-class ProspectsFilesProgress(BaseModel):
-    """Prospects processed from total prospects in a given file"""
-
-    id: int
-    file_id: int
-    total: int
-    done: int
-
-
 class ProspectFilesProgressResponse(BaseModel):
-    total: int
+    total_rows: int
     done: int

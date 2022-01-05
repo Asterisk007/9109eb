@@ -11,7 +11,6 @@ from api.models import (
     Campaign,
     CampaignProspect,
     ProspectsFiles,
-    ProspectsFilesProgress,
 )
 
 
@@ -25,7 +24,6 @@ if __name__ == "__main__":
             Campaign.__table__,
             Prospect.__table__,
             ProspectsFiles.__table__,
-            ProspectsFilesProgress.__table__,
             User.__table__,
         ]
         print("\n-- Dropping All Tables --")

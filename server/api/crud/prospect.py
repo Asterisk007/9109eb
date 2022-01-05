@@ -11,7 +11,8 @@ from sqlalchemy.sql.functions import user
 from sqlalchemy.sql.sqltypes import String
 from api import schemas
 from api.dependencies.db import get_db
-from api.models import Prospect, ProspectsFiles, ProspectsFilesProgress
+from api.models import Prospect, ProspectsFiles
+from api.schemas import ProspectFilesProgressResponse
 from api.core.constants import DEFAULT_PAGE_SIZE, DEFAULT_PAGE, MIN_PAGE, MAX_PAGE_SIZE
 
 from asyncio import create_task
@@ -27,7 +28,7 @@ class ProspectCrud:
         # Check if a prospect with this email exists
         existing_prospect = (
             db.query(Prospect)
-            .filter(Prospect.email == data[options["email_index"]])
+            .filter(Prospect.user_id == user_id, Prospect.email == data[options["email_index"]])
             .all()
         )
 
@@ -38,8 +39,8 @@ class ProspectCrud:
             existing_prospect.first_name = data[options["first_name_index"]]
             existing_prospect.last_name = data[options["last_name_index"]]
             existing_prospect.email = data[options["email_index"]]
+            existing_prospect.file_id = file_id
             db.commit()
-            self.update_csv_progress(self, db=db, file_id=file_id)
             return
         elif len(existing_prospect) == 0:
             self.create_prospect(
@@ -49,18 +50,12 @@ class ProspectCrud:
                     "email": data[options["email_index"]],
                     "first_name": data[options["first_name_index"]],
                     "last_name": data[options["last_name_index"]],
+                    "file_id": file_id,
                 },
             )
-            self.update_csv_progress(self, db=db, file_id=file_id)
             return
         else:
             return
-
-    def update_csv_progress(self, db: Session, file_id: int):
-        """Update the total number of prospect entries processed from a CSV file"""
-        progress = db.query(ProspectsFilesProgress).get({"file_id": file_id})
-        progress.done += 1
-        db.commit()
 
     @classmethod
     def get_users_prospects(
@@ -113,19 +108,19 @@ class ProspectCrud:
 
     @classmethod
     def create_prospects_file(
-        cls, db: Session, data: List[List[String]]
+        cls, db: Session, user_id: int, data: List[List[String]]
     ) -> ProspectsFiles:
-        prospect_file = ProspectsFiles(data=data)
+        prospect_file = ProspectsFiles(data=data, user_id=user_id)
         db.add(prospect_file)
         db.commit()
         db.refresh(prospect_file)
         return prospect_file
 
     @classmethod
-    async def set_columns(
+    async def set_csv_column_indices(
         self, db: Session, user_id: int, id: int, options: Dict
     ) -> ProspectsFiles:
-        prospects_file = db.query(ProspectsFiles).get(id)
+        prospects_file = db.query(ProspectsFiles).get({"id": id, "user_id": user_id})
 
         if prospects_file is None:
             Logger.error("No prospects file was found with id of " + str(id))
@@ -137,38 +132,17 @@ class ProspectCrud:
         else:
             starting_index = 0
 
-        # Check for existing session to insert new prospects
-        existing_progress = db.query(ProspectsFilesProgress).get({"file_id": id})
-        if existing_progress is not None:
-            # print("Restarting previous session")
-            prospects_file_progress = existing_progress
-            prospects_file_progress.done = 0
-        else:
-            # print("Creating new session")
-            prospects_file_progress = ProspectsFilesProgress(
-                file_id=id, done=0, total=len(prospects_file.data)
-            )
-            db.add(prospects_file_progress)
-        db.commit()
-        db.refresh(prospects_file_progress)
-
         tasks = []
-        """
-        pool = multiprocessing.Pool(processes=4)
-        run_func = partial(self.create_prospect_from_csv, self, db, user_id, id, options)
-        """
         for row in prospects_file.data[starting_index:]:
-            # Create an asyncio task which will add this prospect to the database.
             """
+            Create an asyncio task which will add this prospect to the database.
+
             CSV will always be formatted correctly, but
             data will not always exist in a column (i.e. any columns could
             be empty for a given row). Since the Prospect model requires
             an email for a primary key, if no email exists then skip that row.
             """
             if "@" in row[options["email_index"]]:
-                """
-                tasks.append(row)
-                """
                 tasks.append(
                     create_task(
                         self.create_prospect_from_csv(
@@ -181,18 +155,23 @@ class ProspectCrud:
                         )
                     )
                 )
-        """
-        pool.map(run_func, tasks)
-        """
+
         await asyncio.gather(*tasks)
         return prospects_file
 
     @classmethod
     def get_prospects_file_progress(
         self, db: Session, user_id: int, id: int
-    ) -> ProspectsFilesProgress:
-        progress = db.query(ProspectsFilesProgress).get({"file_id": id})
-        if progress is None:
+    ) -> ProspectFilesProgressResponse:
+        queried_file = db.query(ProspectsFiles).get({"id": id, "user_id": user_id})
+        if queried_file is None:
             raise Exception("No such file is being processed.")
 
-        return progress
+        total = len(queried_file.data)
+        done = len(
+            db.query(Prospect)
+            .filter(Prospect.user_id == user_id, Prospect.file_id == id)
+            .all()
+        )
+
+        return {"total_rows": total, "done": done}

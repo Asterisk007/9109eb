@@ -3,6 +3,7 @@ from os import stat
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.datastructures import UploadFile
 from fastapi.params import File
+from sqlalchemy.orm import relationship
 from sqlalchemy.orm.session import Session
 from api import schemas
 from api.dependencies.auth import get_current_user
@@ -12,6 +13,7 @@ from api.dependencies.db import get_db
 from api.models.prospectsfiles import ProspectsFiles
 from api.schemas.prospectsfiles import ProspectFilesProgressResponse
 from csv import reader
+import codecs
 
 router = APIRouter(prefix="/api", tags=["prospects"])
 
@@ -49,55 +51,54 @@ async def post_prospects_file(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Please log in"
         )
 
-    fb = file.file.read()
-    line_count = len(fb.decode("utf-8").split("\n"))
+    file_bytes = file.file.read()
+    line_count = len(file_bytes.decode("utf-8").split("\n"))
 
     # Check that file is under size limit
-    if len(fb) > (200 * (2 ** 1024)) or line_count > 1000000:
+    if len(file_bytes) > (200 * (2 ** 1024)) or line_count > 1000000:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="File size limit is 200 MB or 1 million rows",
         )
 
     await file.seek(0)
 
-    file_data = file.file.read().decode("utf-8")
-
+    csv_file = reader(codecs.iterdecode(file.file, "utf-8"))
     csv_data = []
-    for lines in file_data.splitlines():
-        if lines != "":
-            line = []
-            for x in lines.split(","):
-                line.append(x)
-            csv_data.append(line)
+    for row in csv_file:
+        if len(row) == 0:
+            continue
+        csv_data.append(row)
 
     # Save file to database
-    prospectsfiles_obj = ProspectCrud.create_prospects_file(db=db, data=csv_data)
+    prospectsfiles_obj = ProspectCrud.create_prospects_file(
+        db=db, data=csv_data, user_id=current_user.id
+    )
 
     return {"id": prospectsfiles_obj.id, "preview": prospectsfiles_obj.data[0:3]}
 
 
 @router.post(
-    "/prospects_files/{id:str}/prospects", response_model=schemas.ProspectsFiles
+    "/prospects_files/{id:int}/prospects", response_model=schemas.ProspectsFiles
 )
 async def set_columns(
-    current_user: schemas.User = Depends(get_current_user),
-    id: int = 0,
-    email_index: int = 0,
-    first_name_index: int = 1,
-    last_name_index: int = 2,
-    force: bool = False,
-    has_headers: bool = False,
+    id: int,
+    email_index: int,
+    first_name_index: int,
+    last_name_index: int,
+    force: bool,
+    has_headers: bool,
     db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(get_current_user),
 ) -> ProspectsFiles:
-    # Route for starting the process of adding prospects to the database"""
+    """Route for starting the process of adding prospects to the database"""
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Please log in"
         )
 
     try:
-        response_obj = await ProspectCrud.set_columns(
+        response_obj = await ProspectCrud.set_csv_column_indices(
             db=db,
             user_id=current_user.id,
             id=id,
@@ -117,13 +118,13 @@ async def set_columns(
 
 
 @router.get(
-    "/prospect_files/{id:str}/progress",
+    "/prospect_files/{id:int}/progress",
     response_model=schemas.ProspectFilesProgressResponse,
 )
 def get_csv_progress(
+    id: int,
     db: Session = Depends(get_db),
     current_user: schemas.User = Depends(get_current_user),
-    id: int = 0,
 ) -> ProspectFilesProgressResponse:
     if not current_user:
         raise HTTPException(
@@ -131,7 +132,7 @@ def get_csv_progress(
         )
 
     try:
-        progress = ProspectCrud.get_prospects_file_progress(db, current_user.id, id)
-        return {"total": progress.total, "done": progress.done}
+        response = ProspectCrud.get_prospects_file_progress(db, current_user.id, id)
+        return {"total_rows": response["total_rows"], "done": response["done"]}
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.args[0])
