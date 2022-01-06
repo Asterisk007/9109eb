@@ -11,7 +11,7 @@ class ProspectsFiles(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, unique=True)
     data = Column(ARRAY(String, dimensions=2), nullable=False)
-    user_id = Column(BigInteger, ForeignKey("users.id"), primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"))
 
     def __repr__(self):
         return f"{self.id} | {len(self.data)} files"

@@ -1,23 +1,13 @@
 import asyncio
-from contextvars import ContextVar
-from logging import Logger
-import multiprocessing
-from multiprocessing import process
 from typing import Dict, List, Set, Union
-from fastapi.param_functions import Depends
-from sqlalchemy.orm import session
 from sqlalchemy.orm.session import Session
-from sqlalchemy.sql.functions import user
 from sqlalchemy.sql.sqltypes import String
 from api import schemas
-from api.dependencies.db import get_db
 from api.models import Prospect, ProspectsFiles
 from api.schemas import ProspectFilesProgressResponse
 from api.core.constants import DEFAULT_PAGE_SIZE, DEFAULT_PAGE, MIN_PAGE, MAX_PAGE_SIZE
 
 from asyncio import create_task
-from multiprocessing import Process
-from functools import partial
 
 
 class ProspectCrud:
@@ -28,7 +18,10 @@ class ProspectCrud:
         # Check if a prospect with this email exists
         existing_prospect = (
             db.query(Prospect)
-            .filter(Prospect.user_id == user_id, Prospect.email == data[options["email_index"]])
+            .filter(
+                Prospect.user_id == user_id,
+                Prospect.email == data[options["email_index"]],
+            )
             .all()
         )
 
@@ -120,11 +113,12 @@ class ProspectCrud:
     async def set_csv_column_indices(
         self, db: Session, user_id: int, id: int, options: Dict
     ) -> ProspectsFiles:
-        prospects_file = db.query(ProspectsFiles).get({"id": id, "user_id": user_id})
+        prospects_file = db.query(ProspectsFiles).get(id)
 
         if prospects_file is None:
-            Logger.error("No prospects file was found with id of " + str(id))
-            raise FileNotFoundError("No such file in the database")
+            raise FileNotFoundError("No such file is in the database")
+        elif prospects_file.user_id != user_id:
+            raise PermissionError("You do not have access to this file")
 
         # Skip first line if CSV file has headers
         if options["has_headers"] == True:
@@ -163,15 +157,17 @@ class ProspectCrud:
     def get_prospects_file_progress(
         self, db: Session, user_id: int, id: int
     ) -> ProspectFilesProgressResponse:
-        queried_file = db.query(ProspectsFiles).get({"id": id, "user_id": user_id})
+        queried_file = db.query(ProspectsFiles).get(id)
         if queried_file is None:
-            raise Exception("No such file is being processed.")
+            raise FileNotFoundError("No such file is in the database")
+        elif queried_file.user_id != user_id:
+            raise PermissionError("You do not have access to this file")
 
         total = len(queried_file.data)
-        done = len(
+        done = (
             db.query(Prospect)
             .filter(Prospect.user_id == user_id, Prospect.file_id == id)
-            .all()
+            .count()
         )
 
         return {"total_rows": total, "done": done}

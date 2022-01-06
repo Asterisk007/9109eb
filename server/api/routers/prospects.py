@@ -1,17 +1,20 @@
-from logging import Logger
-from os import stat
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.datastructures import UploadFile
 from fastapi.params import File
-from sqlalchemy.orm import relationship
 from sqlalchemy.orm.session import Session
 from api import schemas
 from api.dependencies.auth import get_current_user
-from api.core.constants import DEFAULT_PAGE, DEFAULT_PAGE_SIZE
+from api.core.constants import (
+    DEFAULT_PAGE,
+    DEFAULT_PAGE_SIZE,
+    FILE_SIZE_LIMIT,
+    FILE_LINE_LIMIT,
+)
 from api.crud import ProspectCrud
 from api.dependencies.db import get_db
 from api.models.prospectsfiles import ProspectsFiles
 from api.schemas.prospectsfiles import ProspectFilesProgressResponse
+
 from csv import reader
 import codecs
 
@@ -55,7 +58,8 @@ async def post_prospects_file(
     line_count = len(file_bytes.decode("utf-8").split("\n"))
 
     # Check that file is under size limit
-    if len(file_bytes) > (200 * (2 ** 1024)) or line_count > 1000000:
+    # File must be under 200 MB or contain fewer than 1,000,000 rows
+    if len(file_bytes) > FILE_SIZE_LIMIT or line_count > FILE_LINE_LIMIT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File size limit is 200 MB or 1 million rows",
@@ -112,6 +116,8 @@ async def set_columns(
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.args[0])
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=e.args[0])
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.args[0])
     return {"id": response_obj.id, "data": response_obj.data}
@@ -133,6 +139,10 @@ def get_csv_progress(
 
     try:
         response = ProspectCrud.get_prospects_file_progress(db, current_user.id, id)
-        return {"total_rows": response["total_rows"], "done": response["done"]}
+        return response
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.args[0])
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=e.args[0])
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.args[0])

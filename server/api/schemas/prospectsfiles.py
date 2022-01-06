@@ -17,5 +17,6 @@ class ProspectsFilesResponse(BaseModel):
 
 
 class ProspectFilesProgressResponse(BaseModel):
+    """The total number of rows in the uploaded file, and the number of entries changed in the database"""
     total_rows: int
     done: int
